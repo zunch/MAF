@@ -10,23 +10,30 @@ load_dotenv()
 
 
 class AzureOpenAIConfig(BaseSettings):
-    """Azure OpenAI configuration."""
+    """Azure OpenAI configuration for Microsoft Agent Framework."""
 
     endpoint: str = ""
     api_key: str = ""
-    deployment: str = "gpt-4"
-    api_version: str = "2024-02-15-preview"
-    embedding_deployment: str = "text-embedding-ada-002"
+    deployment_name: str = "gpt-4o"
+    api_version: str = "2024-10-21"
 
     model_config = SettingsConfigDict(env_prefix='AZURE_OPENAI_')
 
 
+class AzureAIConfig(BaseSettings):
+    """Azure AI Project configuration for Microsoft Agent Framework."""
+
+    project_endpoint: str = ""
+    model_deployment_name: str = "gpt-4o-mini"
+
+    model_config = SettingsConfigDict(env_prefix='AZURE_AI_')
+
+
 class OpenAIConfig(BaseSettings):
-    """OpenAI configuration."""
+    """OpenAI configuration for Microsoft Agent Framework."""
 
     api_key: str = ""
-    model: str = "gpt-4"
-    embedding_model: str = "text-embedding-ada-002"
+    model_id: str = "gpt-4o"
 
     model_config = SettingsConfigDict(env_prefix='OPENAI_')
 
@@ -74,56 +81,71 @@ class RAGConfig(BaseSettings):
 
 
 class AppConfig:
-    """Main application configuration."""
+    """Main application configuration for Microsoft Agent Framework."""
 
     def __init__(self):
         self.azure_openai = AzureOpenAIConfig()
+        self.azure_ai = AzureAIConfig()
         self.openai = OpenAIConfig()
         self.vector_db = VectorDBConfig()
         self.agent = AgentConfig()
         self.memory = MemoryConfig()
         self.rag = RAGConfig()
 
-        # Determine which AI provider to use
-        self.use_azure = bool(self.azure_openai.endpoint and self.azure_openai.api_key)
+        # Determine which AI provider to use (priority order)
+        self.use_azure_ai = bool(self.azure_ai.project_endpoint)
+        self.use_azure_openai = bool(self.azure_openai.endpoint and self.azure_openai.api_key)
+        self.use_openai = bool(self.openai.api_key)
 
-    def get_llm_config(self) -> dict:
-        """Get LLM configuration based on available credentials."""
-        if self.use_azure:
-            return {
-                "provider": "azure",
-                "endpoint": self.azure_openai.endpoint,
-                "api_key": self.azure_openai.api_key,
-                "deployment": self.azure_openai.deployment,
-                "api_version": self.azure_openai.api_version,
-                "max_tokens": self.agent.max_tokens,
-                "temperature": self.agent.temperature,
-            }
-        else:
-            return {
-                "provider": "openai",
-                "api_key": self.openai.api_key,
-                "model": self.openai.model,
-                "max_tokens": self.agent.max_tokens,
-                "temperature": self.agent.temperature,
-            }
+    def create_chat_client(self):
+        """
+        Create appropriate ChatClient for Microsoft Agent Framework.
 
-    def get_embedding_config(self) -> dict:
-        """Get embedding configuration based on available credentials."""
-        if self.use_azure:
-            return {
-                "provider": "azure",
-                "endpoint": self.azure_openai.endpoint,
-                "api_key": self.azure_openai.api_key,
-                "deployment": self.azure_openai.embedding_deployment,
-                "api_version": self.azure_openai.api_version,
-            }
-        else:
-            return {
-                "provider": "openai",
-                "api_key": self.openai.api_key,
-                "model": self.openai.embedding_model,
-            }
+        Returns:
+            ChatClient instance (AzureAIChatClient, AzureOpenAIChatClient, or OpenAIChatClient)
+        """
+        try:
+            # Försök Azure AI först
+            if self.use_azure_ai:
+                from agent_framework.azure import AzureAIAgentClient
+                from azure.identity.aio import DefaultAzureCredential
+
+                return AzureAIAgentClient(async_credential=DefaultAzureCredential())
+
+            # Sedan Azure OpenAI
+            elif self.use_azure_openai:
+                from agent_framework.azure import AzureOpenAIChatClient
+                from azure.identity import AzureKeyCredential
+
+                return AzureOpenAIChatClient(
+                    endpoint=self.azure_openai.endpoint,
+                    credential=AzureKeyCredential(self.azure_openai.api_key),
+                    model_id=self.azure_openai.deployment_name,
+                    api_version=self.azure_openai.api_version
+                )
+
+            # Slutligen OpenAI
+            elif self.use_openai:
+                from agent_framework.openai import OpenAIChatClient
+
+                return OpenAIChatClient(
+                    model_id=self.openai.model_id
+                )
+
+            else:
+                # Fallback till simulering om ingen config finns
+                print("⚠️  Ingen AI-konfiguration hittad. Använder simuleringsläge.")
+                print("   Konfigurera .env-filen för att använda riktiga AI-modeller.")
+                return None
+
+        except ImportError as e:
+            print(f"⚠️  Kunde inte importera agent_framework: {e}")
+            print("   Installera med: pip install agent-framework --pre")
+            return None
+
+    def has_ai_config(self) -> bool:
+        """Check if any AI configuration is available."""
+        return self.use_azure_ai or self.use_azure_openai or self.use_openai
 
 
 # Global config instance

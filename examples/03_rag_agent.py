@@ -1,404 +1,208 @@
 """
-Exempel 3: RAG - Retrieval Augmented Generation
+Exempel 3: RAG (Retrieval Augmented Generation) med Microsoft Agent Framework
 
-Detta exempel visar hur man implementerar en RAG-agent som kan:
-- Indexera dokument i en vektor-databas
-- Hämta relevant information baserat på frågor
-- Generera svar som kombinerar hämtad kontext med LLM-kunskap
-- Citera källor i svar
+Detta exempel visar hur man implementerar RAG med:
+- Function tools för dokumenthämtning
+- Enkel vektor-sökning
+- Citering av källor i svar
 """
 
 import asyncio
-import sys
+from typing import Annotated, List
+from pydantic import Field
 from pathlib import Path
-from typing import List, Dict, Any, Optional
-from dataclasses import dataclass
-from datetime import datetime
-
-# Lägg till parent directory till path
-sys.path.append(str(Path(__file__).parent.parent))
-
-from shared.config import config
-from shared.utils import setup_logging, print_section, chunk_text, calculate_similarity
 
 
-@dataclass
-class Document:
-    """Representation av ett dokument."""
-    id: str
-    title: str
-    content: str
-    metadata: Dict[str, Any]
-    source: str
+# Simulerad dokument-databas
+DOCUMENTS = {
+    "doc1": {
+        "title": "Microsoft Agent Framework Översikt",
+        "content": """Microsoft Agent Framework (MAF) är det nya ramverket som förenar
+        Semantic Kernel och AutoGen. Det erbjuder enhetligt API, minneshantering,
+        RAG-stöd, middleware och workflow orchestration."""
+    },
+    "doc2": {
+        "title": "Minneshantering i MAF",
+        "content": """MAF stödjer både kortidsminne (Threads) och långtidsminne
+        (ChatMessageStore). Threads används för sessionsbaserad kontext, medan
+        ChatMessageStore ger persistent lagring mellan sessioner."""
+    },
+    "doc3": {
+        "title": "Workflows i MAF",
+        "content": """MAF har kraftfull workflow orchestration med stöd för
+        sequential, parallel och conditional execution. MagenticBuilder används
+        för att orkestrera multi-agent samarbete."""
+    }
+}
 
 
-@dataclass
-class DocumentChunk:
-    """En chunk av ett dokument."""
-    id: str
-    document_id: str
-    content: str
-    chunk_index: int
-    embedding: Optional[List[float]] = None
-    metadata: Dict[str, Any] = None
+def search_documents(
+    query: Annotated[str, Field(description="Sökfrågan för att hitta relevanta dokument")]
+) -> str:
+    """
+    Sök efter relevanta dokument baserat på query.
+    Denna funktion kan anropas av agenten för att hämta information.
+    """
+    print(f"\n🔍 Söker dokument för: '{query}'")
 
+    # Enkel keyword-baserad sökning (i produktion: använd vector search)
+    results = []
+    query_lower = query.lower()
 
-class DocumentStore:
-    """Lagrar och indexerar dokument för RAG."""
+    for doc_id, doc in DOCUMENTS.items():
+        content_lower = doc["content"].lower()
+        title_lower = doc["title"].lower()
 
-    def __init__(self):
-        self.documents: Dict[str, Document] = {}
-        self.chunks: List[DocumentChunk] = []
-        self.logger = setup_logging()
+        # Räkna matchningar
+        score = content_lower.count(query_lower[:10]) + title_lower.count(query_lower[:10]) * 2
 
-    def _create_simple_embedding(self, text: str) -> List[float]:
-        """
-        Skapa en enkel embedding för demonstration.
-        I produktion: använd Azure OpenAI text-embedding-ada-002
-        """
-        # Extremt förenklad embedding för demo
-        embedding = [0.0] * 20
-        words = text.lower().split()[:20]
-        for i, word in enumerate(words):
-            embedding[i] = sum(ord(c) for c in word) / (len(word) * 255.0)
-        return embedding
+        if score > 0 or any(word in content_lower for word in query_lower.split()):
+            results.append((score, doc))
 
-    def add_document(self, doc: Document, chunk_size: int = 500, overlap: int = 100) -> int:
-        """
-        Lägg till och indexera ett dokument.
+    # Sortera efter score
+    results.sort(reverse=True, key=lambda x: x[0])
 
-        Args:
-            doc: Dokumentet att lägga till
-            chunk_size: Storlek på chunks
-            overlap: Överlapp mellan chunks
+    # Returnera top 2 resultat
+    if not results:
+        return "Inga relevanta dokument hittades."
 
-        Returns:
-            Antal chunks skapade
-        """
-        # Spara dokumentet
-        self.documents[doc.id] = doc
+    output = "Hittade följande relevanta dokument:\n\n"
+    for _, doc in results[:2]:
+        output += f"**{doc['title']}**\n{doc['content']}\n\n"
 
-        # Dela upp i chunks
-        text_chunks = chunk_text(doc.content, chunk_size, overlap)
-
-        # Skapa och indexera chunks
-        for i, chunk_text in enumerate(text_chunks):
-            chunk = DocumentChunk(
-                id=f"{doc.id}_chunk_{i}",
-                document_id=doc.id,
-                content=chunk_text,
-                chunk_index=i,
-                embedding=self._create_simple_embedding(chunk_text),
-                metadata={
-                    "title": doc.title,
-                    "source": doc.source,
-                    "chunk_index": i,
-                    "total_chunks": len(text_chunks)
-                }
-            )
-            self.chunks.append(chunk)
-
-        self.logger.info(
-            "document_indexed",
-            doc_id=doc.id,
-            chunks_created=len(text_chunks)
-        )
-
-        return len(text_chunks)
-
-    def search(self, query: str, top_k: int = 3, threshold: float = 0.0) -> List[Dict[str, Any]]:
-        """
-        Sök efter relevanta chunks.
-
-        Args:
-            query: Sökfrågan
-            top_k: Antal resultat att returnera
-            threshold: Minsta similarity score
-
-        Returns:
-            Lista med relevanta chunks
-        """
-        query_embedding = self._create_simple_embedding(query)
-
-        results = []
-        for chunk in self.chunks:
-            similarity = calculate_similarity(query_embedding, chunk.embedding)
-            if similarity >= threshold:
-                doc = self.documents[chunk.document_id]
-                results.append({
-                    "chunk_id": chunk.id,
-                    "content": chunk.content,
-                    "similarity": similarity,
-                    "source": doc.source,
-                    "title": doc.title,
-                    "metadata": chunk.metadata
-                })
-
-        # Sortera efter similarity
-        results.sort(key=lambda x: x["similarity"], reverse=True)
-
-        self.logger.info("search_completed", query=query, results_found=len(results))
-
-        return results[:top_k]
-
-    def get_stats(self) -> Dict[str, Any]:
-        """Få statistik om document store."""
-        return {
-            "total_documents": len(self.documents),
-            "total_chunks": len(self.chunks),
-            "avg_chunks_per_doc": len(self.chunks) / len(self.documents) if self.documents else 0
-        }
-
-
-class RAGAgent:
-    """Agent som använder Retrieval Augmented Generation."""
-
-    def __init__(self):
-        """Initiera RAG-agent."""
-        self.document_store = DocumentStore()
-        self.logger = setup_logging()
-        self.llm_config = config.get_llm_config()
-
-    def index_documents(self, documents: List[Document]) -> Dict[str, int]:
-        """
-        Indexera en lista av dokument.
-
-        Args:
-            documents: Lista med dokument att indexera
-
-        Returns:
-            Dict med statistik om indexeringen
-        """
-        total_chunks = 0
-        for doc in documents:
-            chunks = self.document_store.add_document(doc)
-            total_chunks += chunks
-
-        self.logger.info(
-            "indexing_completed",
-            documents_indexed=len(documents),
-            total_chunks=total_chunks
-        )
-
-        return {
-            "documents_indexed": len(documents),
-            "total_chunks": total_chunks
-        }
-
-    async def query(self, question: str, top_k: int = 3) -> Dict[str, Any]:
-        """
-        Ställ en fråga till RAG-agenten.
-
-        Args:
-            question: Frågan att besvara
-            top_k: Antal dokument att hämta
-
-        Returns:
-            Dict med svar och metadata
-        """
-        # 1. Hämta relevanta dokument
-        relevant_chunks = self.document_store.search(question, top_k=top_k)
-
-        if not relevant_chunks:
-            return {
-                "answer": "Jag kunde inte hitta någon relevant information i dokumenten.",
-                "sources": [],
-                "context_used": False
-            }
-
-        # 2. Bygg kontext från hämtade chunks
-        context_parts = []
-        sources = []
-
-        for i, chunk in enumerate(relevant_chunks, 1):
-            context_parts.append(
-                f"[Källa {i}: {chunk['title']}]\n{chunk['content']}\n"
-            )
-            sources.append({
-                "title": chunk["title"],
-                "source": chunk["source"],
-                "similarity": chunk["similarity"]
-            })
-
-        context = "\n".join(context_parts)
-
-        # 3. Generera svar (simulerat)
-        # I produktion skulle du använda:
-        # from azure.ai.agent import AgentRuntime
-        # response = await runtime.run(
-        #     prompt=f"Context:\n{context}\n\nQuestion: {question}\n\nAnswer:",
-        #     config=self.llm_config
-        # )
-
-        answer = self._generate_answer(question, relevant_chunks)
-
-        self.logger.info(
-            "query_completed",
-            question=question,
-            chunks_used=len(relevant_chunks)
-        )
-
-        return {
-            "answer": answer,
-            "sources": sources,
-            "context": context,
-            "context_used": True,
-            "chunks_retrieved": len(relevant_chunks)
-        }
-
-    def _generate_answer(self, question: str, chunks: List[Dict]) -> str:
-        """Generera svar baserat på fråga och hämtade chunks."""
-        # Simulerad svarsgenerering för demonstration
-        sources_text = ", ".join([c["title"] for c in chunks])
-        return (
-            f"Baserat på informationen från {sources_text}, "
-            f"så kan jag besvara din fråga: '{question}'. "
-            f"Jag hittade {len(chunks)} relevanta avsnitt i dokumenten."
-        )
-
-
-# Skapa exempel-dokument
-SAMPLE_DOCUMENTS = [
-    Document(
-        id="doc1",
-        title="Introduktion till Python",
-        content="""
-        Python är ett högnivå-programmeringsspråk som är känt för sin läsbarhet
-        och enkla syntax. Det skapades av Guido van Rossum och släpptes första
-        gången 1991. Python används idag för webbutveckling, data science,
-        maskininlärning, automation och mycket mer.
-
-        Pythons filosofi betonar kodens läsbarhet och använder signifikant
-        indragning för att definiera kodblock. Detta gör koden lättare att
-        läsa och underhålla jämfört med många andra programmeringsspråk.
-
-        Python har ett stort och aktivt community med tusentals open-source
-        bibliotek och ramverk tillgängliga via Python Package Index (PyPI).
-        """,
-        metadata={"category": "programming", "language": "Swedish"},
-        source="python_intro.txt"
-    ),
-    Document(
-        id="doc2",
-        title="Maskininlärning Grundläggande",
-        content="""
-        Maskininlärning (ML) är en gren av artificiell intelligens som fokuserar
-        på att bygga system som kan lära sig från data. Istället för att explicit
-        programmeras med regler, lär sig ML-modeller mönster från exempel.
-
-        Det finns tre huvudtyper av maskininlärning:
-        1. Supervised Learning - Modellen tränas på märkta data
-        2. Unsupervised Learning - Modellen hittar mönster i omärkta data
-        3. Reinforcement Learning - Modellen lär sig genom trial and error
-
-        Python är det mest populära språket för maskininlärning tack vare
-        bibliotek som scikit-learn, TensorFlow och PyTorch.
-        """,
-        metadata={"category": "AI", "language": "Swedish"},
-        source="ml_basics.txt"
-    ),
-    Document(
-        id="doc3",
-        title="Azure AI Services",
-        content="""
-        Azure AI Services är Microsofts samling av AI-tjänster som gör det enkelt
-        att bygga intelligenta applikationer. Tjänsterna inkluderar:
-
-        - Azure OpenAI Service: Tillgång till GPT-4 och andra OpenAI-modeller
-        - Computer Vision: Bildanalys och objektdetektering
-        - Speech Services: Tal-till-text och text-till-tal
-        - Language Services: Textanalys, översättning och sentimentanalys
-
-        Azure AI Agent Service är det nya ramverket som förenar funktionalitet
-        från Semantic Kernel och AutoGen. Det gör det enkelt att bygga
-        intelligenta agenter med minne, RAG och komplex orkestrering.
-        """,
-        metadata={"category": "cloud", "language": "Swedish"},
-        source="azure_ai.txt"
-    ),
-]
+    print(f"   ✅ Returnerade {min(2, len(results))} dokument")
+    return output
 
 
 async def main():
     """Huvudfunktion som demonstrerar RAG."""
-    print_section("📚 Exempel 3: RAG - Retrieval Augmented Generation")
+    print("\n" + "=" * 80)
+    print("  📚 Exempel 3: RAG - Retrieval Augmented Generation")
+    print("=" * 80)
 
     print("""
-Detta exempel visar hur en RAG-agent:
-1. Indexerar dokument i en vektor-databas
-2. Hämtar relevant information baserat på frågor
-3. Genererar svar som kombinerar hämtad kontext med LLM-kunskap
-4. Citerar källor för transparens
+Microsoft Agent Framework stödjer RAG genom Function Tools.
+Agenten kan anropa funktioner för att hämta relevant information.
+
+Detta exempel visar:
+1. Definiera function tools för dokumentsökning
+2. Agenten anropar tools automatiskt vid behov
+3. Svar baseras på hämtad information
     """)
 
-    # Skapa RAG-agent
-    agent = RAGAgent()
+    # Försök importera agent framework
+    try:
+        from agent_framework import ChatAgent
+        from agent_framework.openai import OpenAIChatClient
+        has_framework = True
+    except ImportError:
+        print("\n⚠️  agent-framework är inte installerat.")
+        print("   Installera med: pip install agent-framework --pre\n")
+        await demo_simulated()
+        return
 
-    # Indexera dokument
-    print_section("📥 Indexerar Dokument")
-    stats = agent.index_documents(SAMPLE_DOCUMENTS)
-    print(f"✅ Indexerade {stats['documents_indexed']} dokument")
-    print(f"✅ Skapade {stats['total_chunks']} chunks")
+    # Försök skapa agent
+    try:
+        chat_client = OpenAIChatClient(model_id="gpt-4o-mini")
 
-    # Document store statistik
-    store_stats = agent.document_store.get_stats()
-    print(f"📊 Genomsnitt chunks per dokument: {store_stats['avg_chunks_per_doc']:.1f}")
+        # Skapa agent med search tool
+        agent = ChatAgent(
+            chat_client=chat_client,
+            instructions="""Du är en expert på Microsoft Agent Framework.
+            Använd search_documents funktionen för att hitta information när användaren ställer frågor.
+            Citera alltid källor i dina svar.""",
+            tools=search_documents  # Ge agenten tillgång till search-funktionen
+        )
+        print("\n✅ RAG Agent skapad med search tool\n")
 
-    # Ställ frågor
-    print_section("❓ Frågor och Svar")
+    except Exception as e:
+        print(f"\n⚠️  Kunde inte skapa agent: {e}")
+        print("   Konfigurera OPENAI_API_KEY i .env-filen\n")
+        await demo_simulated()
+        return
+
+    # Demo: Ställ frågor som kräver dokumenthämtning
+    print("\n" + "-" * 80)
+    print("  ❓ Demo: Frågor med RAG")
+    print("-" * 80 + "\n")
 
     questions = [
-        "Vem skapade Python?",
-        "Vilka typer av maskininlärning finns det?",
-        "Vad är Azure AI Agent Service?",
-        "Hur används Python inom AI?",
+        "Vad är Microsoft Agent Framework?",
+        "Hur fungerar minneshantering i MAF?",
+        "Berätta om workflows i MAF",
     ]
 
     for question in questions:
-        print(f"\n🔍 Fråga: {question}")
-        print("-" * 80)
-
-        result = await agent.query(question, top_k=2)
-
-        print(f"💡 Svar: {result['answer']}\n")
-
-        if result['sources']:
-            print("📖 Källor:")
-            for i, source in enumerate(result['sources'], 1):
-                print(f"   {i}. {source['title']} (similarity: {source['similarity']:.2f})")
-                print(f"      Källa: {source['source']}")
-
+        print(f"👤 Användare: {question}")
         print()
-        await asyncio.sleep(0.5)
 
-    # Visa exempel på kontext som hämtades
-    print_section("🔎 Exempel på Hämtad Kontext")
-    result = await agent.query("Berätta om Python", top_k=1)
-    print("För frågan 'Berätta om Python' hämtades följande kontext:\n")
-    print(result['context'][:500] + "...")
+        # Agenten kommer automatiskt anropa search_documents om behövs
+        response = await agent.run(question)
 
-    print_section("✅ Exempel Avslutat")
+        print(f"\n🤖 Agent: {response.text}\n")
+        print("-" * 80 + "\n")
+        await asyncio.sleep(1)
+
+    print("\n" + "=" * 80)
+    print("  ✅ Exempel Avslutat")
+    print("=" * 80)
     print("""
 Lärdomar:
-- RAG kombinerar retrieval med generering för faktabaserade svar
-- Dokument delas upp i chunks för bättre precision
-- Semantisk sökning hittar relevant kontext automatiskt
-- Källor citeras för transparens och verifierbarhet
-- Minskar hallucinations jämfört med ren LLM-generation
+✓ Function tools ger agenten tillgång till extern data
+✓ Agenten bestämmer själv när den behöver anropa tools
+✓ RAG minskar hallucinations och ger faktabaserade svar
+✓ Källor kan citeras för transparens
 
 I Produktion:
-- Använd Azure OpenAI för riktiga embeddings (text-embedding-ada-002)
-- Använd Qdrant, ChromaDB eller Azure AI Search som vektor-databas
-- Implementera re-ranking för bättre resultat
-- Lägg till hybrid search (keyword + semantic)
-- Implementera citation tracking
-- Cacha embeddings för bättre performance
+→ Använd vektor-databaser (Qdrant, ChromaDB, Azure AI Search)
+→ Implementera proper embeddings med Azure OpenAI
+→ Chunka dokument för bättre precision
+→ Lägg till re-ranking för bättre resultat
+→ Implementera hybrid search (keyword + semantic)
 
-Nästa steg:
-- Testa med dina egna dokument
-- Experimentera med olika chunk-storlekar
-- Implementera multi-turn conversations med RAG
-- Lägg till filter på metadata (datum, kategori, etc.)
+Example med vector search:
+```python
+from qdrant_client import QdrantClient
+from openai import OpenAI
+
+def vector_search(query: str) -> str:
+    # Skapa embedding för query
+    embedding = openai.embeddings.create(
+        model="text-embedding-ada-002",
+        input=query
+    ).data[0].embedding
+
+    # Sök i Qdrant
+    results = qdrant.search(
+        collection_name="documents",
+        query_vector=embedding,
+        limit=3
+    )
+
+    return format_results(results)
+```
+
+För att ladda dokument i MAF:
+→ Chunka dokument (500-1000 tokens per chunk)
+→ Skapa embeddings för varje chunk
+→ Lagra i vektor-databas med metadata
+→ Indexera för snabb retrieval
+    """)
+
+
+async def demo_simulated():
+    """Simulerad demo."""
+    print("""
+RAG-processen:
+1. Användare ställer fråga: "Vad är MAF?"
+2. Agent anropar search_documents("MAF")
+3. Dokument hämtas från databas
+4. Agent genererar svar baserat på hämtad info
+5. Svar inkluderar källciteringar
+
+Exempel output:
+"Microsoft Agent Framework (MAF) är det nya ramverket som förenar
+Semantic Kernel och AutoGen [Källa: MAF Översikt]"
     """)
 
 

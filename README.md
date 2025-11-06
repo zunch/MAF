@@ -54,7 +54,7 @@ Visar hur man:
 ## Installation
 
 ### Förutsättningar
-- Python 3.10 eller högre
+- **Python 3.10 eller högre** (Microsoft Agent Framework kräver Python >=3.10)
 - Azure OpenAI eller OpenAI API-nyckel
 
 ### Steg 1: Klona repository
@@ -69,28 +69,34 @@ python -m venv venv
 source venv/bin/activate  # På Windows: venv\Scripts\activate
 ```
 
-### Steg 3: Installera beroenden
+### Steg 3: Installera Microsoft Agent Framework
 ```bash
+# Installera agent-framework (kräver --pre eftersom det är i preview)
+pip install agent-framework --pre
+
+# Installera övriga beroenden
 pip install -r requirements.txt
 ```
 
+**Obs!** Microsoft Agent Framework är för närvarande i public preview (version 1.0.0b251104).
+
 ### Steg 4: Konfigurera miljövariabler
-Skapa en `.env`-fil i root-katalogen:
+Skapa en `.env`-fil i root-katalogen (eller använd `.env.example` som mall):
 
 ```env
-# Azure OpenAI (rekommenderat)
+# Azure OpenAI (Rekommenderat)
 AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com/
 AZURE_OPENAI_API_KEY=your-api-key
-AZURE_OPENAI_DEPLOYMENT=gpt-4
-AZURE_OPENAI_API_VERSION=2024-02-15-preview
+AZURE_OPENAI_DEPLOYMENT_NAME=gpt-4o
+AZURE_OPENAI_API_VERSION=2024-10-21
 
-# Eller OpenAI
-OPENAI_API_KEY=your-openai-api-key
-OPENAI_MODEL=gpt-4
+# Eller OpenAI (Alternativ)
+OPENAI_API_KEY=sk-your-openai-api-key
+OPENAI_MODEL_ID=gpt-4o-mini
 
-# För långtidsminne och RAG (valfritt)
-QDRANT_URL=http://localhost:6333
-CHROMA_PATH=./chroma_db
+# Eller Azure AI Project (för Azure AI Agent Service)
+# AZURE_AI_PROJECT_ENDPOINT=https://your-project.api.azureml.ms
+# AZURE_AI_MODEL_DEPLOYMENT_NAME=gpt-4o-mini
 ```
 
 ## Användning
@@ -140,17 +146,28 @@ MAF/
 
 ## Teknologier
 
-- **Microsoft Agent Framework** - Huvudramverket
-- **Azure OpenAI / OpenAI** - LLM-provider
-- **Qdrant/ChromaDB** - Vektor-databaser för minne och RAG
-- **LangChain** - Kompletterande verktyg för RAG
-- **Pydantic** - Datavalidering
+- **Microsoft Agent Framework (`agent-framework`)** - Det nya ramverket från Microsoft (nov 2025)
+  - Python SDK för att bygga AI-agenter
+  - Förenar Semantic Kernel och AutoGen
+  - Stöd för Threads, ChatMessageStore, ContextProviders, MagenticBuilder
+- **Azure OpenAI / OpenAI** - LLM-providers
+  - `AzureOpenAIChatClient`, `AzureAIAgentClient`, eller `OpenAIChatClient`
+- **Pydantic** - Datavalidering och settings
+- **Python 3.10+** - Krävs av agent-framework
+
+**Valfritt (för avancerade exempel):**
+- Redis - För RedisChatMessageStore
+- Qdrant/ChromaDB - För vektor-baserat långtidsminne
+- Mem0 - För semantiskt minne med Mem0Provider
 
 ## Lär dig mer
 
-- [Microsoft Agent Framework Dokumentation](https://docs.microsoft.com/azure/ai-services/agents/)
-- [Azure AI Agent Service](https://azure.microsoft.com/services/ai-agent-service/)
-- [Migreringsguide från Semantic Kernel](https://docs.microsoft.com/azure/ai-services/agents/migration)
+- [Microsoft Agent Framework Dokumentation](https://learn.microsoft.com/agent-framework/)
+- [GitHub Repository](https://github.com/microsoft/agent-framework)
+- [PyPI Package](https://pypi.org/project/agent-framework/)
+- [Quick Start Guide](https://learn.microsoft.com/agent-framework/tutorials/quick-start)
+- [Agent Memory Guide](https://learn.microsoft.com/agent-framework/user-guide/agents/agent-memory)
+- [Azure AI Foundry Blog](https://devblogs.microsoft.com/foundry/introducing-microsoft-agent-framework-the-open-source-engine-for-agentic-ai-apps/)
 
 ## Licens
 

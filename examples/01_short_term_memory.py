@@ -1,204 +1,171 @@
 """
-Exempel 1: Kortidsminne (Short-term Memory)
+Exempel 1: Kortidsminne (Short-term Memory) med Microsoft Agent Framework
 
-Detta exempel visar hur man skapar en agent med kortidsminne som kan:
-- Komma ihåg konversationshistorik under en session
-- Använda kontext från tidigare meddelanden
-- Begränsa minnesstorleken för att hålla nere token-användning
+Detta exempel visar hur Threads används för att hantera kortidsminne:
+- Skapa och återanvända threads för konversationskontext
+- Serialisera och deserialiser threads för persistence
+- Hantera flera parallella sessions med separata threads
 """
 
 import asyncio
-import sys
+import json
 from pathlib import Path
 
-# Lägg till parent directory till path
-sys.path.append(str(Path(__file__).parent.parent))
-
-from shared.config import config
-from shared.utils import setup_logging, print_section, print_agent_response
-from typing import List, Dict, Any
-from datetime import datetime
-
-
-class ShortTermMemory:
-    """Kortidsminne som håller de senaste N meddelandena."""
-
-    def __init__(self, max_size: int = 10):
-        """
-        Initiera kortidsminne.
-
-        Args:
-            max_size: Maximalt antal meddelanden att komma ihåg
-        """
-        self.max_size = max_size
-        self.messages: List[Dict[str, Any]] = []
-        self.logger = setup_logging()
-
-    def add_message(self, role: str, content: str) -> None:
-        """Lägg till ett meddelande i minnet."""
-        message = {
-            "role": role,
-            "content": content,
-            "timestamp": datetime.utcnow().isoformat()
-        }
-        self.messages.append(message)
-
-        # Håll bara de senaste max_size meddelandena
-        if len(self.messages) > self.max_size:
-            removed = self.messages.pop(0)
-            self.logger.info(
-                "memory_cleanup",
-                removed_message=removed["role"],
-                current_size=len(self.messages)
-            )
-
-    def get_context(self) -> List[Dict[str, str]]:
-        """Hämta alla meddelanden som kontext."""
-        return [{"role": msg["role"], "content": msg["content"]} for msg in self.messages]
-
-    def get_summary(self) -> str:
-        """Få en sammanfattning av minnet."""
-        return f"Minnesstorlek: {len(self.messages)}/{self.max_size} meddelanden"
-
-    def clear(self) -> None:
-        """Rensa minnet."""
-        self.messages.clear()
-        self.logger.info("memory_cleared")
-
-
-class ConversationalAgent:
-    """En enkel konversationsagent med kortidsminne."""
-
-    def __init__(self, memory_size: int = 10):
-        """
-        Initiera agent.
-
-        Args:
-            memory_size: Storlek på kortidsminne
-        """
-        self.memory = ShortTermMemory(max_size=memory_size)
-        self.logger = setup_logging()
-        self.llm_config = config.get_llm_config()
-
-        # I verklig implementation skulle vi använda MAF's AgentRuntime
-        # För detta exempel använder vi en simulerad respons
-        self.use_simulation = True
-
-    def _simulate_llm_response(self, user_message: str, context: List[Dict]) -> str:
-        """Simulera LLM-respons baserat på kontext."""
-        # Detta är bara för demonstration när Azure/OpenAI inte är konfigurerat
-        context_summary = f" (med {len(context)} meddelanden i minnet)" if context else ""
-
-        responses = {
-            "vad heter jag": "Du har inte berättat ditt namn än!",
-            "jag heter": f"Trevligt att träffas! Jag kommer ihåg ditt namn{context_summary}.",
-            "kommer du ihåg": f"Ja, jag har {len(context)} meddelanden i mitt kortidsminne.",
-        }
-
-        for key, response in responses.items():
-            if key in user_message.lower():
-                return response
-
-        return f"Jag hörde dig säga: '{user_message}'{context_summary}"
-
-    async def chat(self, user_message: str) -> str:
-        """
-        Chatta med agenten.
-
-        Args:
-            user_message: Användarens meddelande
-
-        Returns:
-            Agentens svar
-        """
-        # Lägg till användarens meddelande i minnet
-        self.memory.add_message("user", user_message)
-
-        # Hämta kontext från minnet
-        context = self.memory.get_context()
-
-        self.logger.info(
-            "processing_message",
-            message_length=len(user_message),
-            context_size=len(context)
-        )
-
-        # I verklig implementation:
-        # from azure.ai.agent import AgentRuntime
-        # runtime = AgentRuntime(config=self.llm_config)
-        # response = await runtime.run(messages=context)
-
-        # För detta exempel använder vi simulering
-        if self.use_simulation:
-            response_text = self._simulate_llm_response(user_message, context)
-        else:
-            # Här skulle du anropa din LLM
-            response_text = "LLM response here"
-
-        # Lägg till agentens svar i minnet
-        self.memory.add_message("assistant", response_text)
-
-        return response_text
-
-
 async def main():
-    """Huvudfunktion som demonstrerar kortidsminne."""
-    print_section("🧠 Exempel 1: Kortidsminne (Short-term Memory)")
+    """Huvudfunktion som demonstrerar kortidsminne med threads."""
+    print("\n" + "=" * 80)
+    print("  🧠 Exempel 1: Kortidsminne (Short-term Memory)")
+    print("=" * 80)
 
     print("""
-Detta exempel visar hur en agent använder kortidsminne för att:
-1. Komma ihåg konversationshistorik
-2. Svara baserat på tidigare kontext
-3. Automatiskt glömma gamla meddelanden när minnesgränsen nås
+Microsoft Agent Framework använder Threads för kortidsminne.
+Threads lagrar konversationshistorik under application runtime.
+
+Detta exempel visar:
+1. Skapa nya threads
+2. Bibehålla kontext mellan meddelanden
+3. Serialisera och återställa thread-state
+4. Hantera flera parallella threads
     """)
 
-    # Skapa agent med minnesstorlek på 6 meddelanden
-    agent = ConversationalAgent(memory_size=6)
+    # Försök importera agent framework
+    try:
+        from agent_framework import ChatAgent
+        from agent_framework.openai import OpenAIChatClient
+        has_framework = True
+    except ImportError:
+        print("\n⚠️  agent-framework är inte installerat.")
+        print("   Installera med: pip install agent-framework --pre")
+        print("\n   Kör simulerad demo istället...\n")
+        await demo_simulated()
+        return
 
-    # Testkonversation
-    conversations = [
-        "Hej! Jag heter Anna.",
+    # Försök skapa chat client
+    try:
+        chat_client = OpenAIChatClient(model_id="gpt-4o-mini")
+
+        # Skapa agent
+        agent = ChatAgent(
+            chat_client=chat_client,
+            instructions="Du är en hjälpsam assistent som kan komma ihåg konversationer."
+        )
+        print("\n✅ Agent skapad med OpenAI\n")
+
+    except Exception as e:
+        print(f"\n⚠️  Kunde inte skapa agent: {e}")
+        print("   Konfigurera OPENAI_API_KEY i .env-filen")
+        print("\n   Kör simulerad demo istället...\n")
+        await demo_simulated()
+        return
+
+    # Demo 1: Grundläggande thread-användning
+    print("\n" + "-" * 80)
+    print("  💬 Demo 1: Grundläggande Thread-användning")
+    print("-" * 80 + "\n")
+
+    # Skapa en ny thread
+    thread = agent.get_new_thread()
+    print("✅ Ny thread skapad\n")
+
+    # Konversation med kontext
+    messages = [
+        "Hej! Jag heter Anna och jag älskar Python-programmering.",
         "Vad heter jag?",
-        "Jag älskar att programmera i Python.",
-        "Vilket programmeringsspråk nämnde jag?",
-        "Vad är din favorit måltid?",
-        "Vad var mitt namn igen?",  # Efter några meddelanden
-        "Kommer du ihåg allt vi pratat om?",
+        "Vilket programmeringsspråk gillar jag?"
     ]
 
-    print_section("💬 Konversation startar")
-
-    for i, message in enumerate(conversations, 1):
-        print(f"\n👤 Användare: {message}")
-
-        response = await agent.chat(message)
-        print(f"🤖 Agent: {response}")
-
-        print(f"   📊 {agent.memory.get_summary()}")
-
-        # Kort paus för läsbarhet
+    for msg in messages:
+        print(f"👤 Användare: {msg}")
+        response = await agent.run(msg, thread=thread)
+        print(f"🤖 Agent: {response.text}\n")
         await asyncio.sleep(0.5)
 
-    # Visa slutgiltigt minnesstatus
-    print_section("📊 Slutgiltigt Minnesstatus")
-    print(agent.memory.get_summary())
-    print("\nMeddelanden i minnet:")
-    for msg in agent.memory.messages:
-        print(f"  [{msg['timestamp']}] {msg['role']}: {msg['content'][:50]}...")
+    # Demo 2: Thread serialisering
+    print("\n" + "-" * 80)
+    print("  💾 Demo 2: Serialisera och Återställ Thread")
+    print("-" * 80 + "\n")
 
-    # Demonstration av att rensa minnet
-    print_section("🧹 Rensa Minnet")
-    agent.memory.clear()
-    print(f"Minnet rensat: {agent.memory.get_summary()}")
+    # Serialisera
+    serialized = await thread.serialize()
+    print("✅ Thread serialiserad\n")
 
-    print_section("✅ Exempel Avslutat")
+    # Spara till fil
+    thread_file = Path("thread_demo.json")
+    with open(thread_file, 'w') as f:
+        json.dump(serialized, f, indent=2)
+    print(f"✅ Sparad till {thread_file}\n")
+
+    # Återställ
+    with open(thread_file, 'r') as f:
+        loaded_data = json.load(f)
+
+    restored_thread = await agent.deserialize_thread(loaded_data)
+    print("✅ Thread återställd\n")
+
+    # Fortsätt konversation med återställd thread
+    print("👤 Användare: Kan du sammanfatta vad du vet om mig?")
+    response = await agent.run(
+        "Kan du sammanfatta vad du vet om mig?",
+        thread=restored_thread
+    )
+    print(f"🤖 Agent: {response.text}\n")
+
+    # Rensa upp
+    thread_file.unlink()
+
+    # Demo 3: Flera parallella threads
+    print("\n" + "-" * 80)
+    print("  🔄 Demo 3: Flera Parallella Threads")
+    print("-" * 80 + "\n")
+
+    thread_alice = agent.get_new_thread()
+    thread_bob = agent.get_new_thread()
+
+    print("Session Alice:")
+    print("👤 Alice: Hej! Jag gillar jazz.")
+    resp_a1 = await agent.run("Hej! Jag gillar jazz.", thread=thread_alice)
+    print(f"🤖 Agent: {resp_a1.text}\n")
+
+    print("Session Bob:")
+    print("👤 Bob: Hej! Jag gillar rock.")
+    resp_b1 = await agent.run("Hej! Jag gillar rock.", thread=thread_bob)
+    print(f"🤖 Agent: {resp_b1.text}\n")
+
+    print("Tillbaka till Alice:")
+    print("👤 Alice: Vilken musik gillar jag?")
+    resp_a2 = await agent.run("Vilken musik gillar jag?", thread=thread_alice)
+    print(f"🤖 Agent: {resp_a2.text}\n")
+
+    print("\n" + "=" * 80)
+    print("  ✅ Exempel Avslutat")
+    print("=" * 80)
     print("""
 Lärdomar:
-- Kortidsminne behåller endast de senaste N meddelandena
-- Äldre meddelanden glöms automatiskt när gränsen nås
-- Detta hjälper att kontrollera token-användning och kostnader
-- Perfekt för sessionsbaserade konversationer
+✓ Threads bibehåller konversationskontext automatiskt
+✓ Varje thread är isolerad från andra
+✓ Threads kan serialiseras för persistence
+✓ Perfekt för sessionsbaserade applikationer
+
+I Produktion:
+→ Spara threads i Redis/SQL med user/session ID
+→ Implementera TTL för gamla threads
+→ Använd ChatMessageStore för mer kontroll
+→ Kombinera med långtidsminne (exempel 02)
     """)
+
+
+async def demo_simulated():
+    """Simulerad demo utan AI-konfiguration."""
+    print("\n" + "-" * 80)
+    print("  🎭 Simulerad Demo")
+    print("-" * 80 + "\n")
+
+    print("Så här fungerar threads:\n")
+    print("👤 Användare: Hej! Jag heter Anna.")
+    print("🤖 Agent: Trevligt! Hej Anna!\n")
+    print("👤 Användare: Vad heter jag?")
+    print("🤖 Agent: Du heter Anna - vi pratade precis!\n")
+    print("📝 Threads bibehåller kontext automatiskt mellan meddelanden.\n")
 
 
 if __name__ == "__main__":

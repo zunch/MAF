@@ -1,28 +1,19 @@
-# Microsoft Agent Framework och kärnberoenden
-azure-ai-agent-framework>=0.1.0
-semantic-kernel>=1.0.0  # För kompatibilitet under övergångsperioden
+# Microsoft Agent Framework - Huvudpaket (Python 3.10+)
+# Kräver --pre eftersom det är i preview (från nov 2025)
+agent-framework>=1.0.0b251104
 
-# Azure AI Services
+# Azure integration (för Azure OpenAI och Azure AI)
 azure-identity>=1.15.0
-azure-ai-openai>=1.0.0
+
+# OpenAI integration (används av agent-framework)
 openai>=1.12.0
 
-# Vektor-databaser för minne och RAG
-qdrant-client>=1.7.0
-chromadb>=0.4.22
-faiss-cpu>=1.7.4
+# Redis för persistent memory (valfritt - aktivera vid behov)
+# redis>=5.0.0
 
-# RAG och document processing
-langchain>=0.1.0
-langchain-community>=0.0.20
-langchain-openai>=0.0.5
-pypdf>=4.0.0
-docx2txt>=0.8
-markdown>=3.5
-
-# Embeddings och text processing
-sentence-transformers>=2.3.0
-tiktoken>=0.5.2
+# Vektor-databaser för långtidsminne och RAG (valfritt - aktivera vid behov)
+# qdrant-client>=1.7.0
+# chromadb>=0.4.22
 
 # Data och validering
 pydantic>=2.5.0
@@ -30,13 +21,9 @@ pydantic-settings>=2.1.0
 
 # Utilities
 python-dotenv>=1.0.0
-tenacity>=8.2.3  # För retry-logik
-aiohttp>=3.9.0
-httpx>=0.26.0
 
-# Logging och monitoring
+# Logging
 structlog>=24.1.0
-python-json-logger>=2.0.7
 
 # Testing (valfritt)
 pytest>=7.4.0

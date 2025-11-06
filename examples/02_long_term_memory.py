@@ -1,333 +1,191 @@
 """
-Exempel 2: Långtidsminne (Long-term Memory)
+Exempel 2: Långtidsminne (Long-term Memory) med Microsoft Agent Framework
 
-Detta exempel visar hur man implementerar persistent långtidsminne som kan:
-- Lagra konversationer över flera sessioner
-- Söka semantiskt i historisk data
-- Hämta relevant kontext från tidigare interaktioner
-- Använda vektor-databaser för effektiv retrieval
+Detta exempel visar hur man implementerar persistent långtidsminne med:
+- ChatMessageStoreProtocol för custom storage
+- Persistent lagring mellan sessioner
+- Serialisering och deserialisering av state
 """
 
 import asyncio
-import sys
-from pathlib import Path
-from typing import List, Dict, Any, Optional
-from datetime import datetime
-import json
-
-# Lägg till parent directory till path
-sys.path.append(str(Path(__file__).parent.parent))
-
-from shared.config import config
-from shared.utils import setup_logging, print_section, calculate_similarity
-
-
-class VectorStore:
-    """Enkel vektor-store för demonstration (i produktion: använd Qdrant/ChromaDB)."""
-
-    def __init__(self):
-        self.vectors: List[Dict[str, Any]] = []
-        self.logger = setup_logging()
-
-    def _create_simple_embedding(self, text: str) -> List[float]:
-        """
-        Skapa en enkel embedding (i produktion: använd Azure OpenAI embeddings).
-
-        Detta är en MYCKET förenklad version för demonstration.
-        """
-        # Simple character-based "embedding" för demo
-        embedding = [0.0] * 10
-        for i, char in enumerate(text.lower()[:10]):
-            embedding[i] = ord(char) / 255.0
-        return embedding
-
-    def add(self, text: str, metadata: Dict[str, Any]) -> str:
-        """Lägg till text i vektordatabasen."""
-        vector_id = f"vec_{len(self.vectors)}"
-        embedding = self._create_simple_embedding(text)
-
-        self.vectors.append({
-            "id": vector_id,
-            "text": text,
-            "embedding": embedding,
-            "metadata": metadata,
-            "timestamp": datetime.utcnow().isoformat()
-        })
-
-        self.logger.info("vector_added", id=vector_id, text_length=len(text))
-        return vector_id
-
-    def search(self, query: str, top_k: int = 3, threshold: float = 0.0) -> List[Dict[str, Any]]:
-        """Sök efter liknande vektorer."""
-        query_embedding = self._create_simple_embedding(query)
-
-        results = []
-        for vec in self.vectors:
-            similarity = calculate_similarity(query_embedding, vec["embedding"])
-            if similarity >= threshold:
-                results.append({
-                    **vec,
-                    "similarity": similarity
-                })
-
-        # Sortera efter similarity
-        results.sort(key=lambda x: x["similarity"], reverse=True)
-
-        return results[:top_k]
-
-    def get_all(self) -> List[Dict[str, Any]]:
-        """Hämta alla vektorer."""
-        return self.vectors
-
-    def clear(self) -> None:
-        """Rensa databasen."""
-        self.vectors.clear()
-        self.logger.info("vector_store_cleared")
-
-
-class LongTermMemory:
-    """Långtidsminne med persistent lagring och semantisk sökning."""
-
-    def __init__(self, user_id: str, similarity_threshold: float = 0.3):
-        """
-        Initiera långtidsminne.
-
-        Args:
-            user_id: Unik identifierare för användaren
-            similarity_threshold: Minsta similarity för relevanta minnen
-        """
-        self.user_id = user_id
-        self.similarity_threshold = similarity_threshold
-        self.vector_store = VectorStore()
-        self.logger = setup_logging()
-
-        # I produktion skulle vi använda:
-        # from qdrant_client import QdrantClient
-        # self.client = QdrantClient(url=config.vector_db.qdrant_url)
-
-    def remember(self, content: str, metadata: Optional[Dict] = None) -> None:
-        """
-        Spara ett minne.
-
-        Args:
-            content: Innehållet att komma ihåg
-            metadata: Extra metadata om minnet
-        """
-        meta = metadata or {}
-        meta.update({
-            "user_id": self.user_id,
-            "created_at": datetime.utcnow().isoformat()
-        })
-
-        self.vector_store.add(content, meta)
-        self.logger.info("memory_saved", user_id=self.user_id, content_length=len(content))
-
-    def recall(self, query: str, top_k: int = 5) -> List[Dict[str, Any]]:
-        """
-        Hämta relevanta minnen baserat på en query.
-
-        Args:
-            query: Sökfrågan
-            top_k: Antal minnen att returnera
-
-        Returns:
-            Lista med relevanta minnen
-        """
-        results = self.vector_store.search(
-            query,
-            top_k=top_k,
-            threshold=self.similarity_threshold
-        )
-
-        self.logger.info(
-            "memory_recalled",
-            query=query,
-            results_found=len(results)
-        )
-
-        return results
-
-    def get_conversation_history(self) -> List[Dict[str, Any]]:
-        """Hämta all konversationshistorik."""
-        return self.vector_store.get_all()
-
-    def get_stats(self) -> Dict[str, Any]:
-        """Få statistik om långtidsminnet."""
-        memories = self.vector_store.get_all()
-        return {
-            "total_memories": len(memories),
-            "user_id": self.user_id,
-            "oldest_memory": memories[0]["timestamp"] if memories else None,
-            "newest_memory": memories[-1]["timestamp"] if memories else None,
-        }
-
-
-class AgentWithLongTermMemory:
-    """Agent med både kort- och långtidsminne."""
-
-    def __init__(self, user_id: str):
-        """
-        Initiera agent.
-
-        Args:
-            user_id: Unik identifierare för användaren
-        """
-        self.user_id = user_id
-        self.long_term_memory = LongTermMemory(user_id)
-        self.session_messages: List[Dict[str, str]] = []
-        self.logger = setup_logging()
-
-    async def chat(self, message: str) -> Dict[str, Any]:
-        """
-        Chatta med agenten.
-
-        Args:
-            message: Användarens meddelande
-
-        Returns:
-            Dict med response och metadata
-        """
-        # 1. Spara användarens meddelande i långtidsminne
-        self.long_term_memory.remember(
-            content=message,
-            metadata={"role": "user", "session_id": "current"}
-        )
-
-        # 2. Hämta relevanta minnen från tidigare
-        relevant_memories = self.long_term_memory.recall(message, top_k=3)
-
-        # 3. Bygg kontext
-        context_parts = []
-        if relevant_memories:
-            context_parts.append("Relevanta tidigare minnen:")
-            for mem in relevant_memories:
-                context_parts.append(
-                    f"  - [{mem['timestamp']}] {mem['text'][:100]} "
-                    f"(similarity: {mem['similarity']:.2f})"
-                )
-
-        # 4. Generera svar (simulerat)
-        response_text = self._generate_response(message, relevant_memories)
-
-        # 5. Spara agentens svar i långtidsminne
-        self.long_term_memory.remember(
-            content=response_text,
-            metadata={"role": "assistant", "session_id": "current"}
-        )
-
-        return {
-            "response": response_text,
-            "relevant_memories": len(relevant_memories),
-            "context": "\n".join(context_parts) if context_parts else "Inga tidigare minnen hittade",
-        }
-
-    def _generate_response(self, message: str, memories: List[Dict]) -> str:
-        """Generera svar baserat på meddelande och minnen."""
-        # Simulerad respons för demonstration
-        if memories:
-            memory_context = f"Jag kommer ihåg att vi pratade om detta för {len(memories)} gång(er) sedan."
-            return f"Baserat på våra tidigare konversationer: {memory_context} Du sa: '{message}'"
-        else:
-            return f"Detta är första gången vi pratar om detta. Du sa: '{message}'"
-
-
-async def demo_session_1(agent: AgentWithLongTermMemory):
-    """Första sessionen - bygger upp minnen."""
-    print_section("📅 Session 1: Bygga upp långtidsminne")
-
-    messages = [
-        "Hej! Jag heter Emma och jag älskar att spela gitarr.",
-        "Min favoritmusik är jazz och blues.",
-        "Jag har spelat gitarr i 5 år nu.",
-    ]
-
-    for msg in messages:
-        print(f"\n👤 Emma: {msg}")
-        result = await agent.chat(msg)
-        print(f"🤖 Agent: {result['response']}")
-        await asyncio.sleep(0.3)
-
-    # Visa stats
-    stats = agent.long_term_memory.get_stats()
-    print(f"\n📊 Minnen sparade: {stats['total_memories']}")
-
-
-async def demo_session_2(agent: AgentWithLongTermMemory):
-    """Andra sessionen - hämtar från långtidsminne."""
-    print_section("📅 Session 2: Hämta från långtidsminne (senare samma dag)")
-
-    messages = [
-        "Vilket instrument spelar jag?",
-        "Vad gillar jag för musik?",
-        "Vill du veta mer om min musiksmak?",
-    ]
-
-    for msg in messages:
-        print(f"\n👤 Emma: {msg}")
-        result = await agent.chat(msg)
-        print(f"🤖 Agent: {result['response']}")
-
-        if result['relevant_memories'] > 0:
-            print(f"\n   🔍 Hämtade {result['relevant_memories']} relevanta minnen:")
-            print(f"   {result['context']}")
-
-        await asyncio.sleep(0.3)
+from typing import Any, Sequence
+from collections.abc import MutableSequence
 
 
 async def main():
     """Huvudfunktion som demonstrerar långtidsminne."""
-    print_section("🧠 Exempel 2: Långtidsminne (Long-term Memory)")
+    print("\n" + "=" * 80)
+    print("  🧠 Exempel 2: Långtidsminne (Long-term Memory)")
+    print("=" * 80)
 
     print("""
-Detta exempel visar hur en agent använder långtidsminne för att:
-1. Spara konversationer persistent över sessioner
-2. Söka semantiskt i tidigare interaktioner
-3. Hämta relevant kontext från historiken
-4. Bygga upp en djup förståelse över tid
+Microsoft Agent Framework stödjer persistent memory genom:
+1. ChatMessageStore för att lagra meddelanden
+2. Serialisering av store state
+3. Återställning mellan sessioner
+
+Detta exempel visar en custom implementation.
     """)
 
-    # Skapa agent för användare "emma_123"
-    agent = AgentWithLongTermMemory(user_id="emma_123")
+    # Försök importera agent framework
+    try:
+        from agent_framework import ChatAgent, ChatMessage, ChatMessageStoreProtocol, Role
+        from agent_framework.openai import OpenAIChatClient
+        has_framework = True
+    except ImportError:
+        print("\n⚠️  agent-framework är inte installerat.")
+        print("   Installera med: pip install agent-framework --pre\n")
+        await demo_simulated()
+        return
 
-    # Session 1: Bygg upp minnen
-    await demo_session_1(agent)
+    # Custom Message Store Implementation
+    class SimplePersistentStore(ChatMessageStoreProtocol):
+        """Enkel persistent message store för demonstration."""
 
-    # Kort paus mellan sessioner
-    print("\n⏸️  ... några timmar senare ...\n")
-    await asyncio.sleep(1)
+        def __init__(self, session_id: str):
+            self.session_id = session_id
+            self._messages: list[ChatMessage] = []
+            print(f"✅ Store skapad för session: {session_id}")
 
-    # Session 2: Använd minnen
-    await demo_session_2(agent)
+        async def add_messages(self, messages: Sequence[ChatMessage]) -> None:
+            """Lägg till meddelanden."""
+            self._messages.extend(messages)
+            print(f"   📝 Sparade {len(messages)} meddelanden")
 
-    # Visa fullständig historik
-    print_section("📚 Fullständig Konversationshistorik")
-    history = agent.long_term_memory.get_conversation_history()
-    for i, mem in enumerate(history, 1):
-        role = mem['metadata'].get('role', 'unknown')
-        print(f"{i}. [{mem['timestamp']}] {role.upper()}: {mem['text']}")
+        async def list_messages(self) -> list[ChatMessage]:
+            """Hämta alla meddelanden."""
+            return self._messages
 
-    # Visa statistik
-    print_section("📊 Långtidsminne Statistik")
-    stats = agent.long_term_memory.get_stats()
-    print(f"Totalt antal minnen: {stats['total_memories']}")
-    print(f"Användare: {stats['user_id']}")
-    print(f"Äldsta minne: {stats['oldest_memory']}")
-    print(f"Nyaste minne: {stats['newest_memory']}")
+        async def serialize(self, **kwargs: Any) -> Any:
+            """Serialisera state."""
+            return {
+                "session_id": self.session_id,
+                "message_count": len(self._messages)
+            }
 
-    print_section("✅ Exempel Avslutat")
+        async def update_from_state(self, serialized_store_state: Any, **kwargs: Any) -> None:
+            """Uppdatera från serialiserad state."""
+            if serialized_store_state:
+                self.session_id = serialized_store_state.get("session_id", self.session_id)
+
+    # Försök skapa agent
+    try:
+        chat_client = OpenAIChatClient(model_id="gpt-4o-mini")
+
+        # Factory funktion för att skapa store
+        def create_store():
+            return SimplePersistentStore("user_emma_session_1")
+
+        # Skapa agent med custom store
+        agent = ChatAgent(
+            chat_client=chat_client,
+            instructions="Du är en hjälpsam assistent med långtidsminne.",
+            chat_message_store_factory=create_store
+        )
+        print("\n✅ Agent skapad med persistent memory\n")
+
+    except Exception as e:
+        print(f"\n⚠️  Kunde inte skapa agent: {e}")
+        print("   Konfigurera OPENAI_API_KEY i .env-filen\n")
+        await demo_simulated()
+        return
+
+    # Demo: Session 1
+    print("\n" + "-" * 80)
+    print("  📅 Session 1: Bygga upp minnen")
+    print("-" * 80 + "\n")
+
+    thread1 = agent.get_new_thread()
+
+    messages_session1 = [
+        "Hej! Jag heter Emma och jag älskar att spela gitarr.",
+        "Min favoritgenre är blues.",
+        "Jag har spelat i 5 år."
+    ]
+
+    for msg in messages_session1:
+        print(f"👤 Emma: {msg}")
+        response = await agent.run(msg, thread=thread1)
+        print(f"🤖 Agent: {response.text}\n")
+        await asyncio.sleep(0.5)
+
+    # Serialisera thread för "session end"
+    print("💾 Avslutar session 1...\n")
+    serialized_thread1 = await thread1.serialize()
+
+    # Demo: Session 2 (simulera ny session)
+    print("\n" + "-" * 80)
+    print("  📅 Session 2: Återställ minnen")
+    print("-" * 80 + "\n")
+
+    # Skapa ny agent med samma store factory
+    def create_store_session2():
+        return SimplePersistentStore("user_emma_session_2")
+
+    agent2 = ChatAgent(
+        chat_client=chat_client,
+        instructions="Du är en hjälpsam assistent med långtidsminne.",
+        chat_message_store_factory=create_store_session2
+    )
+
+    # Återställ thread från session 1
+    thread2 = await agent2.deserialize_thread(serialized_thread1)
+    print("✅ Thread återställd från session 1\n")
+
+    # Fortsätt konversation
+    messages_session2 = [
+        "Vilket instrument spelar jag?",
+        "Hur länge har jag spelat?"
+    ]
+
+    for msg in messages_session2:
+        print(f"👤 Emma: {msg}")
+        response = await agent2.run(msg, thread=thread2)
+        print(f"🤖 Agent: {response.text}\n")
+        await asyncio.sleep(0.5)
+
+    print("\n" + "=" * 80)
+    print("  ✅ Exempel Avslutat")
+    print("=" * 80)
     print("""
 Lärdomar:
-- Långtidsminne bibehålls mellan sessioner
-- Semantisk sökning hittar relevanta minnen automatiskt
-- Agenten kan bygga upp djup förståelse över tid
-- I produktion: använd Qdrant, ChromaDB eller Azure AI Search
-- I produktion: använd Azure OpenAI för riktiga embeddings
+✓ ChatMessageStore ger persistent memory
+✓ State kan serialiseras mellan sessioner
+✓ Custom stores kan integrera med databaser
+✓ Kombinera med threads för fullständig memory
 
-Nästa steg:
-- Implementera med riktig vektor-databas
-- Lägg till memory consolidation (sammanfattning av gamla minnen)
-- Implementera forgetting strategies (glöm irrelevant data)
-- Lägg till privacy controls (GDPR-compliance)
+I Produktion:
+→ Implementera RedisChatMessageStore
+→ Använd SQL/NoSQL för långtidslagring
+→ Lägg till vector search för semantisk retrieval
+→ Implementera memory consolidation
+→ GDPR-compliance och data retention policies
+
+För Redis-baserad memory:
+```python
+from agent_framework.redis import RedisChatMessageStore
+
+def create_redis_store():
+    return RedisChatMessageStore(
+        redis_url="redis://localhost:6379",
+        thread_id="user_123",
+        max_messages=100
+    )
+```
+    """)
+
+
+async def demo_simulated():
+    """Simulerad demo."""
+    print("""
+Långtidsminne gör att agenten kan:
+- Komma ihåg tidigare sessioner
+- Lagra information persistent
+- Hämta historisk kontext
+
+Exempel:
+Session 1: "Jag heter Emma och gillar blues."
+Session 2: "Vad gillar jag för musik?" → "Blues!"
     """)
 
 
