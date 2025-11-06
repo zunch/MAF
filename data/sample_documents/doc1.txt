@@ -1,0 +1,30 @@
+Microsoft Agent Framework - Översikt
+
+Microsoft Agent Framework (MAF) är det nya ramverket som förenar och ersätter Semantic Kernel
+och AutoGen. Det är designat för att göra det enklare att bygga intelligenta, autonoma AI-agenter
+med avancerade kapabiliteter.
+
+Nyckelfunktioner:
+
+1. Enhetligt API
+   MAF erbjuder ett konsekvent API som förenklar utveckling jämfört med att använda separata
+   verktyg. Du kan bygga allt från enkla chatbots till komplexa multi-agent system med samma ramverk.
+
+2. Minneshantering
+   - Kortidsminne för sessionsbaserade konversationer
+   - Långtidsminne med vektor-databaser för persistent lagring
+   - Automatisk minneshantering och optimering
+
+3. RAG-stöd
+   Inbyggt stöd för Retrieval Augmented Generation gör det enkelt att bygga agenter som kan
+   hämta och använda information från dina egna dokument och databaser.
+
+4. Middleware
+   Extensibelt middleware-system för att lägga till funktionalitet som logging, säkerhet,
+   rate limiting och mer.
+
+5. Workflow Orchestration
+   Kraftfull orkestreringsmotor för komplexa multi-step processer och multi-agent samarbete.
+
+Microsoft Agent Framework är tillgängligt både som open-source bibliotek och som managed
+service via Azure AI Agent Service.

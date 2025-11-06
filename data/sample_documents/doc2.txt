@@ -1,0 +1,41 @@
+Minneshantering i Microsoft Agent Framework
+
+Ett av de viktigaste funktionerna i MAF är dess avancerade minneshantering. Agenter kan nu
+komma ihåg kontext både kort- och långsiktigt.
+
+KORTIDSMINNE (Short-term Memory)
+
+Kortidsminne är sessionsbaserat och håller kvar kontext under en pågående konversation.
+Det fungerar genom att:
+
+- Lagra de senaste N meddelandena i minnet
+- Automatiskt glömma gamla meddelanden när gränsen nås
+- Hålla token-användningen under kontroll
+- Bevara kontext för följdfrågor
+
+Användningsfall:
+- Chatbots som behöver komma ihåg vad användaren sa tidigare i konversationen
+- Agents som behöver följa trådar i diskussioner
+- Task-baserade agenter som genomför multi-step processer
+
+LÅNGTIDSMINNE (Long-term Memory)
+
+Långtidsminne är persistent och bevaras mellan sessioner. Det använder vektor-databaser
+för att:
+
+- Lagra tidigare konversationer permanent
+- Söka semantiskt i historisk data
+- Hämta relevant kontext från gamla interaktioner
+- Bygga upp djup förståelse över tid
+
+Implementation:
+- Använd Qdrant, ChromaDB eller Azure AI Search som vektor-databas
+- Embeddings skapas med Azure OpenAI (text-embedding-ada-002)
+- Semantisk sökning hittar relevanta minnen baserat på likhet
+- Metadata kan användas för filtrering (datum, användare, etc.)
+
+Best Practices:
+- Kombinera kort- och långtidsminne för bästa resultat
+- Implementera memory consolidation för att sammanfatta gamla minnen
+- Använd privacy controls för GDPR-compliance
+- Implementera forgetting strategies för irrelevant data

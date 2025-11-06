@@ -1,0 +1,47 @@
+RAG och Workflows i Microsoft Agent Framework
+
+RETRIEVAL AUGMENTED GENERATION (RAG)
+
+RAG är en teknik som kombinerar informationshämtning med AI-generering för att skapa
+mer faktabaserade och korrekta svar. I MAF är RAG helt integrerat och enkelt att använda.
+
+Så fungerar RAG:
+1. Dokument indexeras i en vektor-databas
+2. Dokument delas upp i chunks för bättre precision
+3. När en fråga ställs söks relevanta chunks fram
+4. De hämtade chunks används som kontext för LLM:en
+5. LLM:en genererar svar baserat på den hämtade informationen
+
+Fördelar med RAG:
+- Minskar hallucinations (LLM:en hittar inte på fakta)
+- Agenten kan svara på frågor om din specifika data
+- Källor kan citeras för transparens
+- Informationen kan uppdateras utan att träna om modellen
+
+WORKFLOWS
+
+Workflows i MAF tillåter dig att orkestrera komplexa multi-step processer och koordinera
+flera agenter.
+
+Workflow-typer:
+- Sequential: Steg körs ett efter ett
+- Parallel: Flera steg körs samtidigt
+- Conditional: Steg körs baserat på villkor
+- Loop: Upprepa steg tills ett villkor är uppfyllt
+- Human-in-the-loop: Vänta på användar-input
+
+Multi-Agent Orchestration:
+Med workflows kan du koordinera flera specialiserade agenter som arbetar tillsammans:
+- Research Agent samlar information
+- Analysis Agent analyserar data
+- Writing Agent skapar dokument
+- Review Agent kvalitetssäkrar resultat
+
+Error Handling:
+- Retry-logik för transient failures
+- Compensating transactions för att ångra steg
+- Checkpoint och resume för long-running workflows
+- Graceful degradation när steg misslyckas
+
+Workflows är perfekta för komplexa uppgifter som kräver planering, flera steg,
+och koordinering av olika resurser och agenter.
